@@ -1,0 +1,99 @@
+from tkinter import *
+from tkinter import messagebox
+import hashlib
+import csv
+
+root = Tk()
+root.title("Log in Page")
+root.geometry("400x400")
+
+class LoginPage(Frame):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.successMessage = Label(self, text="", fg = "black")
+        self.successMessage.pack()
+        self.errorMessage = Label(self, text="", fg="red")
+        self.errorMessage.pack()
+        UsernameLabel = Label(self, text = "Username")
+        UsernameLabel.pack()
+
+        UsernameEntry = Entry(self)
+        UsernameEntry.pack()
+
+        PasswordLabel = Label(self, text = "Password")
+        PasswordLabel.pack()
+
+        PasswordEntry = Entry(self, show = "*")
+        PasswordEntry.pack()
+        ...
+
+        CreateAccountButton = Button(self, text = "Sign up")
+        CreateAccountButton.pack()
+
+    def login(self):
+        username = self.UsernameEntry.get()
+        password = self.PasswordEntry.get()
+
+        auth = password.encode()
+        authHash = hashlib.md5(auth).hexdigest()
+        with open("credentials.csv", 'r') as csvfile:
+            reader = csv.reader(csvfile)
+            usernames = {rows[0]:rows[1] for rows in reader}
+            if username in usernames and usernames[username] == authHash:
+                self.successMessage.config(text = "Logged in successfully")
+            else:
+                self.errorMessage.config(text = "Username or password incorrect")
+            
+
+class SignUp(Frame):
+    def __init__(self, parent):
+        super().__init__(parent)
+
+        UsernameLabel = Label(self, text = "Username")
+        UsernameLabel.pack()
+
+        self.UsernameEntry = Entry(self)
+        self.UsernameEntry.pack()
+
+        PasswordLabel = Label(self, text = "Password")
+        PasswordLabel.pack()
+
+        self.PasswordEntry = Entry(self, show = "*")
+        self.PasswordEntry.pack()
+
+        repeatPasswordLabel = Label(self, text = "repeat Password")
+        repeatPasswordLabel.pack()
+
+        self.repeatPasswordEntry = Entry(self, show = "*")
+        self.repeatPasswordEntry.pack()
+
+    def signup(self):
+        self.errorMessage = Label(self, text="", fg="red")
+        self.errorMessage.pack()
+
+        self.successMessage = Label(self, text="", fg = "black")
+        username = self.UsernameEntry.get()
+        password = self.PasswordEntry.get()
+        secondPassword = self.repeatPasswordEntry.get()
+         
+        if secondPassword == password: 
+            enc = secondPassword.encode()
+            hash1 = hashlib.md5(enc).hexdigest()
+
+            with open("credentials.csv", 'a', newline = '') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(["Username", "Password"])
+                writer.writerow([username, "".join(hash1)])
+            csv.close()
+            self.successMessage.config(text = "You've successfully signed up!")
+        else:
+            self.errorMessage.config(text = "Please make sure your passwords match")
+
+class Stack(Frame):
+    ...
+
+
+app = LoginPage(root)
+app.pack(fill="both", expand=True)
+root.mainloop()
+
