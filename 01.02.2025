@@ -1,0 +1,288 @@
+from tkinter import *
+from tkinter import ttk
+from tkinter import filedialog
+import string
+import random
+import math
+import csv
+import hashlib
+
+import os
+print(os.getcwd())
+os.chdir("C:\Visual Studio Code")  
+
+#has to be the first thing you write in tkinter
+root = Tk()
+root.title("NEA")
+root.geometry("400x400")
+
+class LoginPage(Frame):
+    def __init__(self, parent, navigation):
+        super().__init__(parent)
+        self.navigation = navigation
+        self.successMessage = Label(self, text="", fg = "green")
+        self.successMessage.pack()
+        self.errorMessage = Label(self, text="", fg="red")
+        self.errorMessage.pack()
+        UsernameLabel = Label(self, text = "Username")
+        UsernameLabel.pack()
+
+        self.UsernameEntry = Entry(self)
+        self.UsernameEntry.pack()
+
+        PasswordLabel = Label(self, text = "Password")
+        PasswordLabel.pack()
+
+        self.PasswordEntry = Entry(self, show = "*")
+        self.PasswordEntry.pack()
+        
+        CreateAccountButton = Button(self, text = "Sign up", command=lambda: self.navigation.switchFrame(SignUp))
+        CreateAccountButton.pack()
+
+        SignInButton = Button(self, text="Sign In", command=self.login)
+        SignInButton.pack()
+
+    def login(self):
+        loggingIn = Login(self.UsernameEntry.get(), self.PasswordEntry.get(), self.navigation)
+
+        # if error message isnt empty, display the error message
+        if loggingIn.errorMessage:
+            self.errorMessage.config(text=loggingIn.errorMessage)
+            #reset it back to normal 
+            self.successMessage.config(text="") 
+        else:
+            self.successMessage.config(text=loggingIn.successMessage)
+            self.errorMessage.config(text="")
+
+
+
+class Login():
+    def __init__(self, username, password, navigation):
+        self.navigation = navigation
+        self.errorMessage = ""
+        self.successMessage = ""
+
+        if username == "admin" and password == "password":
+            self.successMessage = "Welcome Leila"
+            self.navigation.switchFrame(MainWindow)
+            return
+        else:
+            self.errorMessage = "Username or Password incorrect"
+
+        auth = password.encode()
+        #creating a password hash for logging in with the masterkey
+        authHash = hashlib.md5(auth).hexdigest()
+        with open("credentials.csv", 'r') as csvfile:
+            reader = csv.reader(csvfile)
+            usernames = {rows[0]:rows[1] for rows in reader}
+            if username in usernames and usernames[username] == authHash:
+                self.successMessage = "Logged in successfully"
+                self.navigation.switchFrame(MainWindow)
+            else:
+                self.errorMessage = "Username or Password incorrect"
+                return
+        
+
+
+class SignUp(Frame):
+    def __init__(self, parent, navigation):
+        super().__init__(parent)
+        self.navigation = navigation
+        UsernameLabel = Label(self, text = "Username")
+        UsernameLabel.pack()
+
+        self.UsernameEntry = Entry(self)
+        self.UsernameEntry.pack()
+
+        PasswordLabel = Label(self, text = "Password")
+        PasswordLabel.pack()
+
+        self.PasswordEntry = Entry(self, show = "*")
+        self.PasswordEntry.pack()
+
+        repeatPasswordLabel = Label(self, text = "repeat Password")
+        repeatPasswordLabel.pack()
+
+        self.repeatPasswordEntry = Entry(self, show = "*")
+        self.repeatPasswordEntry.pack()
+
+        self.finishButton = Button(self, text = "Finish", command = self.finishSignup)
+        self.finishButton.pack()
+        self.errorMessage = Label(self, text="", fg="red")
+        self.errorMessage.pack()
+
+        self.successMessage = Label(self, text="", fg="green")
+        self.successMessage.pack()
+    def finishSignup(self):
+        self.createAccount()
+
+
+    def createAccount(self):
+        #passes in information 
+        newAccount = CreateAccount(self.UsernameEntry.get(), self.PasswordEntry.get(), self.repeatPasswordEntry.get(), self.navigation)
+
+        #you need to define these here because CreateAccount isnt a frame and therefore cant display error or success messages
+        if newAccount.errorMessage:
+            self.errorMessage.config(text=newAccount.errorMessage)
+            self.successMessage.config(text="") 
+        else:
+            self.successMessage.config(text=newAccount.successMessage)
+            self.errorMessage.config(text="")
+
+
+class CreateAccount():
+    def __init__(self, username, password, secondPassword, navigation):
+        self.errorMessage = ""
+        self.successMessage = ""
+        self.navigation = navigation
+
+        if password != secondPassword:
+            self.errorMessage = "Please make sure your passwords match"
+            return
+        
+        enc = secondPassword.encode()
+        hash1 = hashlib.md5(enc).hexdigest()
+
+        #creates an account and stores the username/password duo in a file
+        with open("credentials.csv", 'a', newline = '') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(["Username", "Password"])
+            writer.writerow([username, "".join(hash1)])
+        self.successMessage = "You've successfully signed up!"
+        self.navigation.switchFrame(LoginPage)
+
+
+
+class PasswordGenerator(Frame):
+    def __init__(self, parent, stack):
+        #inheritence
+        super().__init__(parent)
+        self.stack = stack
+        Label(self, text="Password generator").pack()
+
+        self.password = Password()
+        # Initialising usernames list
+        self.usernames = [] 
+        self.Back = Button(self, text = "back", command=stack.BackButton)
+        self.Back.pack()
+
+        #drop down menu option for length of password
+        self.options = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]
+        self.lengthPassword = Label(self, text = "Length of Password").pack()
+        self.selected_length_var = StringVar()
+        self.combo = ttk.Combobox(self, textvariable=self.selected_length_var, values=self.options, state="normal")
+        self.combo.pack()
+
+
+
+
+        #intvars for the checkboxes
+        self.choiceNum = IntVar()
+        self.choiceSpec = IntVar()
+        self.choiceChar = IntVar()
+        #checkboxes for conditions of password generated
+        self.Characters = Checkbutton(self, text = "Characters?", variable = self.choiceChar).pack()
+        self.Numbers = Checkbutton(self, text = "Numbers?", variable = self.choiceNum).pack()
+        self.SpecialCharacters = Checkbutton(self, text = "Special Characters?", variable = self.choiceSpec).pack()
+
+
+        self.generate = Button(self, text = "Generate password", command = self.actually_generate_password).pack()
+        #creating error messages framebase or whatever
+        self.errorMessage = Label(self, text="", fg="red")
+        self.errorMessage.pack()
+
+    def actually_generate_password(self):
+        #converts intvar into an integer
+        try:
+            selected_value = self.selected_length_var.get()
+
+            #makes sure decimal lengths cant be typed in
+            if not str(selected_value).isdigit():
+                self.errorMessage.config(text = "Please select a positive integer length")
+                return
+
+            self.lengthOfPassword = int(selected_value)
+
+
+            characterList = ""
+
+            #options for checkboxes
+            if self.choiceSpec.get() == 1:
+                characterList += string.punctuation
+
+            if self.choiceNum.get() == 1:
+                characterList += string.digits
+
+            if self.choiceChar.get() == 1:
+                characterList += string.ascii_letters
+
+
+            if self.lengthOfPassword >= 100:
+                self.errorMessage.config(text = "Please enter a sensible number")
+                return
+            elif self.lengthOfPassword <= 0:
+                self.errorMessage.config(text = "Please enter a number bigger than 0")
+                return
+            elif characterList == "":
+                self.errorMessage.config(text = "Please select a checkbox")
+            else:
+                self.errorMessage.config(text = "")
+                generatedPassword = self.password.generatePassword(self.lengthOfPassword, characterList)
+
+
+                #using text instead of label means they can copy-paste the password
+                self.outputtedPassword = Text(self, height=1, width=30)
+                self.outputtedPassword.pack()
+
+                self.outputtedPassword.delete("1.0", "end")  # Clear previous content
+                self.outputtedPassword.insert("1.0", "".join(generatedPassword))  # Add the new password
+
+        except ValueError:
+            self.errorMessage.config(text="Please select a valid integer length")
+
+
+class Password():
+    def __init__(self):
+        ...
+    def generatePassword(self, lengthOfPassword, characterList):
+        passwordList = []
+        for i in range (lengthOfPassword):
+            randomchar = random.choice(characterList)
+            passwordList.append(randomchar)
+
+        self.outputtedPassword = passwordList
+        return self.outputtedPassword
+
+
+class MainWindow(Frame):
+    def __init__(self, parent, navigation):
+        super().__init__(parent)
+        self.myLabel = Label(self, text = "Welcome!")
+        self.navigation = navigation
+        self.PasswordGeneratorButton = Button(self, text="Random Password Generator", command = lambda: self.navigation.switchFrame(PasswordGenerator))
+        #self.PasswordStrengthButton = Button(self, text="Password strength checker", command= ...)
+        #still considering if i should leave password strength in there
+        self.myLabel.pack(pady=2)
+        self.PasswordGeneratorButton.pack(pady=10)
+        #self.PasswordStrengthButton.pack(pady=10)
+
+
+class Navigation():
+    def __init__(self):
+        #sets up the first frame by packing it, then you can navigate to other frames easily
+        firstFrame = LoginPage(root, self)
+        self.navstack = []
+        self.navstack.append(firstFrame)
+        firstFrame.pack()
+
+    def switchFrame(self, newFrame):
+        #pass in a frame as a parameter, append it then pack it to switch frames
+        if self.navstack:
+            self.navstack[-1].pack_forget()
+
+        appendFrame = newFrame(root, self)
+        self.navstack.append(appendFrame)
+        appendFrame.pack()
+
+navigation = Navigation()
+root.mainloop()
