@@ -1,0 +1,555 @@
+from tkinter import *
+from tkinter import ttk
+import string
+import random
+import hashlib
+import sqlite3
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives import hashes
+import base64
+import math
+
+#has to be the first thing you write in tkinter
+root = Tk()
+root.title("NEA")
+root.geometry("500x500")
+
+#creating the databases to store the masterkeys and stored passwords in
+conn = sqlite3.connect("PasswordManager2.db")
+cursor = conn.cursor()
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS Users(
+                userId INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                masterKeyHash TEXT NOT NULL
+                )
+            ''')
+cursor.execute("PRAGMA foreign_keys = ON")
+conn.commit()
+conn.close()
+
+conn2 = sqlite3.connect("Passwords.db")
+cursor2 = conn2.cursor()
+cursor2.execute('''
+CREATE TABLE IF NOT EXISTS Passwords(
+    passwordId INTEGER PRIMARY KEY AUTOINCREMENT,
+    userId INTEGER NOT NULL,
+    website TEXT,
+    username TEXT,
+    password BLOB NOT NULL,
+    FOREIGN KEY (userId) REFERENCES Users(userId) ON DELETE CASCADE
+);
+''')
+
+conn2.commit()
+conn2.close()
+
+class LoginPage(Frame):
+    def __init__(self, parent, navigation):
+        super().__init__(parent)
+        self.navigation = navigation
+        self.successMessage = Label(self, text="", fg = "green")
+        self.successMessage.pack()
+        self.errorMessage = Label(self, text="", fg="red")
+        self.errorMessage.pack()
+
+        WelcomeLabel = Label(self, text = "Welcome to Leila's password manager NEA").pack()
+
+        UsernameLabel = Label(self, text = "Username")
+        UsernameLabel.pack()
+
+        self.UsernameEntry = Entry(self)
+        self.UsernameEntry.pack()
+
+        PasswordLabel = Label(self, text = "Password")
+        PasswordLabel.pack()
+
+        self.PasswordEntry = Entry(self, show = "*")
+        self.PasswordEntry.pack()
+
+        SignInButton = Button(self, text="Log In", command=self.login)
+        SignInButton.pack()
+
+        CreateAccountButton = Button(self, text = "Create Account", command=lambda: self.navigation.switchFrame(SignUp))
+        CreateAccountButton.pack()
+
+
+    def login(self):
+        loggingIn = Login(self.UsernameEntry.get(), self.PasswordEntry.get(), self.navigation)
+
+        # if error message isnt empty, display the error message
+        if loggingIn.errorMessage:
+            self.errorMessage.config(text=loggingIn.errorMessage)
+            #reset it back to normal 
+            self.successMessage.config(text="") 
+        else:
+            self.successMessage.config(text=loggingIn.successMessage)
+            self.errorMessage.config(text="")
+
+
+class Login():
+    def __init__(self, username, password, navigation):
+        self.navigation = navigation
+        self.errorMessage = ""
+        self.successMessage = ""
+
+        auth = password.encode()
+        #creating a password hash for logging in with the masterkey
+        authHash = hashlib.sha512(auth).hexdigest()
+        
+        conn = sqlite3.connect("PasswordManager2.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT userId FROM Users WHERE username = ? AND masterKeyHash = ?", (username, authHash))
+        result = cursor.fetchone() 
+        conn.commit()
+        conn.close()
+
+        if result:
+            userId = result[0]
+            self.navigation.currentUserId = userId
+            self.navigation.currentUserPassword = password
+            self.successMessage = "Logged in successfully"
+            self.navigation.switchFrame(MainWindow)
+        else:
+            self.errorMessage = "Username or Password incorrect"
+            return
+        
+
+
+class SignUp(Frame):
+    def __init__(self, parent, navigation):
+        super().__init__(parent)
+        self.navigation = navigation
+        self.backButton = Button(self, text = "Back", command = lambda:self.navigation.backButton())
+        self.backButton.pack()
+        UsernameLabel = Label(self, text = "Username")
+        UsernameLabel.pack()
+
+        self.UsernameEntry = Entry(self)
+        self.UsernameEntry.pack()
+
+        PasswordLabel = Label(self, text = "Password")
+        PasswordLabel.pack()
+
+        self.PasswordEntry = Entry(self, show = "*")
+        self.PasswordEntry.pack()
+
+        repeatPasswordLabel = Label(self, text = "repeat Password")
+        repeatPasswordLabel.pack()
+ 
+        self.repeatPasswordEntry = Entry(self, show = "*")
+        self.repeatPasswordEntry.pack()
+
+        self.finishButton = Button(self, text = "Finish", command = self.finishSignup)
+        self.finishButton.pack()
+        self.errorMessage = Label(self, text="", fg="red")
+        self.errorMessage.pack()
+
+        self.successMessage = Label(self, text="", fg="green")
+        self.successMessage.pack()
+    def finishSignup(self):
+        self.createAccount()
+
+    def createAccount(self):
+        #passes in information 
+        newAccount = CreateAccount(self.UsernameEntry.get(), self.PasswordEntry.get(), self.repeatPasswordEntry.get(), self.navigation)
+
+        #you need to define these here because CreateAccount isnt a frame and therefore cant display error or success messages
+        if newAccount.errorMessage:
+            self.errorMessage.config(text=newAccount.errorMessage)
+            self.successMessage.config(text="") 
+        else:
+            self.successMessage.config(text=newAccount.successMessage)
+            self.errorMessage.config(text="")
+
+
+class CreateAccount():
+    def __init__(self, username, password, secondPassword, navigation):
+        self.errorMessage = ""
+        self.successMessage = ""
+        self.navigation = navigation
+        
+
+        if password != secondPassword:
+            self.errorMessage = "Please make sure your passwords match"
+            return
+        
+        enc = secondPassword.encode()
+        hash1 = hashlib.sha512(enc).hexdigest()
+
+        conn = sqlite3.connect("PasswordManager2.db")
+        cursor = conn.cursor()
+
+        cursor.execute("INSERT INTO Users(username, masterKeyHash) VALUES(?, ?)", (username, hash1))
+        self.successMessage = "You've successfully signed up!"
+        self.navigation.switchFrame(LoginPage)
+        conn.commit()
+        conn.close()
+
+class PasswordGenerator(Frame):
+    def __init__(self, parent, navigation):
+        #inheritence
+        super().__init__(parent)
+        self.navigation = navigation
+        self.backButton = Button(self, text = "Back", command = lambda:self.navigation.backButton())
+        self.backButton.pack()
+        Label(self, text="Password generator").pack()
+
+        self.password = Password()
+        # Initialising usernames list
+        self.usernames = [] 
+        #self.Back = Button(self, text = "back", command=stack.BackButton)
+        #self.Back.pack()
+
+        #drop down menu option for length of password
+        self.options = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]
+        self.lengthPassword = Label(self, text = "Length of Password").pack()
+        self.selected_length_var = StringVar()
+        self.combo = ttk.Combobox(self, textvariable=self.selected_length_var, values=self.options, state="normal")
+        self.combo.pack()
+
+        #intvars for the checkboxes
+        self.choiceNum = IntVar()
+        self.choiceSpec = IntVar()
+        self.choiceChar = IntVar()
+        #checkboxes for conditions of password generated
+        self.Characters = Checkbutton(self, text = "Characters?", variable = self.choiceChar).pack()
+        self.Numbers = Checkbutton(self, text = "Numbers?", variable = self.choiceNum).pack()
+        self.SpecialCharacters = Checkbutton(self, text = "Special Characters?", variable = self.choiceSpec).pack()
+
+
+        self.generate = Button(self, text = "Generate password", command = self.actuallyGeneratePassword).pack()
+        #creating error messages framebase or whatever
+        self.errorMessage = Label(self, text="", fg="red")
+        self.errorMessage.pack()
+
+        #using text instead of label means they can copy-paste the password
+        self.outputtedPassword = Text(self, height=1, width=30)
+        self.outputtedPassword.pack()
+
+        self.copyButton = Button(self, text = "Copy")
+        self.copyButton.pack(side = "left")
+        
+        self.storeButton = Button(self, text = "Store in Vault")
+        self.storeButton.pack(side = "right")
+    def actuallyGeneratePassword(self):
+        #converts intvar into an integer
+        try:
+
+            selected_value = self.selected_length_var.get()
+
+            #makes sure decimal lengths cant be typed in
+            if not str(selected_value).isdigit():
+                self.errorMessage.config(text = "Please select a positive integer length")
+                return
+
+            self.lengthOfPassword = int(selected_value)
+
+
+            characterList = ""
+
+            #options for checkboxes
+            if self.choiceSpec.get() == 1:
+                characterList += string.punctuation
+
+            if self.choiceNum.get() == 1:
+                characterList += string.digits
+
+            if self.choiceChar.get() == 1:
+                characterList += string.ascii_letters
+
+
+            if self.lengthOfPassword >= 100:
+                self.errorMessage.config(text = "Please enter a sensible number")
+                return
+            elif self.lengthOfPassword <= 0:
+                self.errorMessage.config(text = "Please enter a number bigger than 0")
+                return
+            elif characterList == "":
+                self.errorMessage.config(text = "Please select a checkbox")
+            else:
+                self.errorMessage.config(text = "")
+                generatedPassword = self.password.generatePassword(self.lengthOfPassword, characterList)
+
+
+
+                self.outputtedPassword.delete("1.0", "end")  # Clear previous content
+                self.outputtedPassword.insert("1.0", "".join(generatedPassword))  # Add the new password
+
+        except ValueError:
+            self.errorMessage.config(text="Please select a valid integer length")
+
+
+class Password():
+    def __init__(self):
+        ...
+    def generatePassword(self, lengthOfPassword, characterList):
+        passwordList = []
+        for i in range (lengthOfPassword):
+            randomchar = random.choice(characterList)
+            passwordList.append(randomchar)
+
+        self.outputtedPassword = passwordList
+        return self.outputtedPassword
+    def evaluatePassword(self,password):
+        length = len(password)
+
+        pool = 0 
+
+        for char in password:
+            if char in string.ascii_lowercase:
+                pool += 26 
+                break  
+
+        
+        for char in password:
+            if char in string.ascii_uppercase:
+                pool += 26  
+                break  
+
+        
+        for char in password:
+            if char in string.digits:
+                pool += 10  
+                break  
+
+       
+        for char in password:
+            if char in string.punctuation:
+                pool += 32 
+                break  
+
+        if pool > 0:
+            entropy = math.log2(pool ** length)
+            return entropy
+        else:
+            return 0
+
+    
+    def evaluateStrength(self, password):
+        entropy = self.evaluatePassword(password)
+        
+        if entropy < 28:
+            return "Very Weak"
+        elif 28 <= entropy < 35:
+            return "Weak"
+        elif 36 <= entropy < 59:
+            return "Reasonable"
+        elif 60 <= entropy < 127:
+            return "Strong"
+        else:
+            return "Very Strong"
+    
+
+class Vault(Frame):
+    def __init__(self, parent, navigation):
+        super().__init__(parent)
+        self.navigation = navigation
+        self.backButton = Button(self, text = "Back", command = lambda:self.navigation.backButton())
+        self.backButton.pack()
+
+        self.explanationLabel = Label(self, text = "Here you can store passwords you want to \n remember. Click 'Add new Entry' to store a password, or select a row \n and click 'copy' to copy a password to your clipboard").pack()
+        self.tree = ttk.Treeview(self, columns=("Website", "Username", "Password"), show="headings") 
+        #defines all the headings for the tree
+        self.tree.heading("Website", text="Website")
+        self.tree.heading("Username", text="Username")
+        self.tree.heading("Password", text="Password")
+        self.tree.pack(side="left", fill="both", expand=True)
+        #making sure they fit on the page
+        self.tree.column("Website", width=150)
+        self.tree.column("Username", width=100)
+        self.tree.column("Password", width=100)
+
+        self.NewEntryButton = Button(self, text = "Add new entry", command = lambda: self.navigation.switchFrame(addDatabaseEntity))
+        self.NewEntryButton.pack()
+
+        self.copyButton = Button(self, text="Copy Password", command=self.copyPassword)
+        self.copyButton.pack(side="right")
+        self.displayStoredPasswords()
+
+        #use SQL to fetch all the usernames and stuff from the databases and display it here
+    def displayStoredPasswords(self):
+
+        userId = self.navigation.currentUserId  # use the logged-in user's id to fetch all their passwords
+        conn = sqlite3.connect("Passwords.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT website, username, password FROM Passwords WHERE userId = ?", (userId,))
+        rows = cursor.fetchall()
+        conn.close()
+
+        for row in rows:
+            website, username, encrypted_password = row
+            encryptor = encryptEntites(self.navigation.currentUserPassword) 
+            decrypted_password = encryptor.decrypt(encrypted_password)  # Decrypt the password so it shows up normally
+            self.tree.insert("", "end", values=(website, username, decrypted_password))
+
+
+    def copyPassword(self):
+
+        self.copyMessage = Label(self, text="")
+        selectedItem = self.tree.focus() #row youve clicked on
+        if selectedItem:
+            values = self.tree.item(selectedItem, "values")
+            if values and len(values) >= 3: #making sure there are 3 columns 
+                password = values[2]
+                self.clipboard_clear()
+                self.clipboard_append(password)
+                #self.copyMessage.config(text = "Copied Password!")
+                #self.copyMessage.pack(side="bottom", pady=5)
+
+            #else:
+                #self.copyMessage.config(text = "Nothing selected")
+                #self.copyMessage.pack(side="bottom", pady=5)
+    
+class addDatabaseEntity(Frame):
+    def __init__(self, parent, navigation):
+        super().__init__(parent)
+        self.navigation = navigation 
+        self.backButton = Button(self, text = "Back", command = lambda:self.navigation.backButton())
+        self.backButton.pack()
+        
+        
+        self.passwordLabel = Label(self, text = "Password")
+        self.passwordLabel.pack()
+
+        self.passwordEntry = Entry(self)
+        self.passwordEntry.pack()
+
+        self.savePasswordButton = Button(self, text = "Save", command = self.savePassword)
+        self.savePasswordButton.pack()
+
+        self.otherOptionsButton = Button(self, text = "Add more columns", command = self.addOtherColumns)
+        self.otherOptionsButton.pack()
+
+        self.usernameOptionEntry = None
+        self.applicationOptionEntry = None
+        self.columnNameEntry = None
+
+    def addOtherColumns(self):
+
+        self.otherOptionsButton.config(state="disabled")
+        self.usernameOptionLabel = Label(self, text = "Username (optional)")
+        self.usernameOptionLabel.pack()
+
+        self.usernameOptionEntry = Entry(self)
+        self.usernameOptionEntry.pack()
+
+        self.applicationOptionLabel = Label(self, text = "Application (optional)" )
+        self.applicationOptionLabel.pack()
+
+        self.applicationOptionEntry = Entry(self)
+        self.applicationOptionEntry.pack()
+
+        #self.savePasswordButton = Button(self, text = "Save", command = self.savePassword)
+        #self.savePasswordButton.pack()
+
+        #self.customOptionButton = Button(self, text = "Add custom column", command = self.addCustomColumn)
+        #self.customOptionButton.pack()
+    def addCustomColumn(self):
+        self.columnNameLabel = Label(self, text = "Column name")
+        self.columnNameLabel.pack()
+
+        self.columnNameEntry = Entry(self)
+        self.columnNameEntry.pack()
+
+    def savePassword(self):
+        password = self.passwordEntry.get()
+
+        encryptor = encryptEntites(self.navigation.currentUserPassword) #encrypts the password to store it in the database
+        encryptedPassword = encryptor.encrypt(password)
+        
+
+        username = self.usernameOptionEntry.get() if self.usernameOptionEntry is not None else None 
+        application = self.applicationOptionEntry.get() if self.applicationOptionEntry is not None else None
+        userId = self.navigation.currentUserId  
+        #customColumn = self.columnNameEntry.get() or None
+
+        conn2 = sqlite3.connect("Passwords.db")
+        cursor2 = conn2.cursor()
+        cursor2.execute('''
+            INSERT INTO Passwords (userId, password, username, website)
+            VALUES (?,?, ?, ?)
+        ''', (userId, encryptedPassword, username, application))
+
+        conn2.commit()
+        conn2.close()
+        
+        #self.passwordEntry.delete(0, END)
+        #self.usernameOptionEntry.delete(0, END)
+        #self.applicationOptionEntry.delete(0, END)
+        #self.columnNameEntry.delete(0, END)
+
+class encryptEntites():
+    def __init__(self, password):
+        self.password = password.encode()
+        self.key = self.getKeyfromPassword()
+        self.fernet = Fernet(self.key) #fernet is what i imported from cryptography
+    
+    def getKeyfromPassword(self):
+        # kdf stands for key derivation function, means you can get a key from an input (the password in this case)
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(), 
+            length=32,                  
+            salt=b"",                #i didn't want a salt so this is empty
+            iterations=100000,
+        )
+        return base64.urlsafe_b64encode(kdf.derive(self.password))
+
+    def encrypt(self, message):
+        encryptedMessage = self.fernet.encrypt(message.encode())
+        return encryptedMessage.decode('utf-8') 
+
+    def decrypt(self, encryptedMessage):
+        # If the encrypted message is a string, convert it back to bytes, needs to be in a valid form for decryption
+        if isinstance(encryptedMessage, str):
+            encryptedMessage = encryptedMessage.strip().encode('utf-8') 
+        return self.fernet.decrypt(encryptedMessage).decode('utf-8')
+
+class MainWindow(Frame):
+    def __init__(self, parent, navigation):
+        super().__init__(parent)
+        self.backButton = Button(self, text = "Back", command = lambda:self.navigation.backButton())
+        self.backButton.pack()
+        self.myLabel = Label(self, text = "Welcome!")
+        self.navigation = navigation
+        self.PasswordGeneratorButton = Button(self, text="Random Password Generator", command = lambda: self.navigation.switchFrame(PasswordGenerator))
+        #self.PasswordStrengthButton = Button(self, text="Password strength checker", command= ...)
+        #still considering if i should leave password strength in there
+        self.myLabel.pack(pady=2)
+        self.PasswordGeneratorButton.pack(pady=10)
+        #self.PasswordStrengthButton.pack(pady=10)
+
+        self.VaultButton = Button(self, text = "Password Vault", command = lambda: self.navigation.switchFrame(Vault))
+        self.VaultButton.pack()
+
+
+#navigation stack to navigate through frames
+class Navigation():
+    def __init__(self):
+        #sets up the first frame by packing it, then you can navigate to other frames easily
+        firstFrame = LoginPage(root, self)
+        self.currentUserId = None
+        self.currentUserPassword = None
+        self.navstack = []
+        self.navstack.append(firstFrame)
+        firstFrame.pack()
+    #pass in a frame as a parameter, append it then pack it to switch frames
+    def switchFrame(self, newFrame):
+        #ignore the last frame in the stack (the one currently showing)
+        if self.navstack:
+            self.navstack[-1].pack_forget()
+
+        appendFrame = newFrame(root, self)
+        self.navstack.append(appendFrame)
+        appendFrame.pack()
+
+    def backButton(self):
+        self.navstack[-1].pack_forget()
+        self.navstack.pop()
+        nextFrame = self.navstack[-1] 
+        nextFrame.pack()
+
+
+navigation = Navigation()
+root.mainloop()
